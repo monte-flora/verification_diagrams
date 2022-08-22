@@ -53,6 +53,7 @@ def max_csi(y, predictions, known_skew):
 
     return max_csi, norm_max_csi, bias[idx]
 
+
 def bss_reliability(y, predictions):
     """
     Reliability component of BSS. Weighted MSE of the mean forecast probabilities
@@ -344,6 +345,8 @@ def reliability_curve(y_true, y_pred, n_bins=10, return_indices=False):
     else:
         return np.array(mean_fcst_probs), np.array(event_frequency) 
 
+    
+    
     
 def reliability_uncertainty(y_true, y_pred, n_iter = 1000, n_bins=10 ):
     '''

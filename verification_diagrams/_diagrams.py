@@ -11,15 +11,19 @@ import warnings
 #from shapely.errors import ShapelyDeprecationWarning
 #warnings.filterwarnings("ignore", category=ShapelyDeprecationWarning) 
 
-
 # Internal package(s)
 from ._curve_utils import _confidence_interval_to_polygon
-
+from ._metrics import calc_csi
 
 class VerificationDiagram:
     mpl.rcParams["axes.titlepad"] = 15
     mpl.rcParams["xtick.labelsize"] = 10
     mpl.rcParams["ytick.labelsize"] = 10
+    
+    def __init__(self, y_true=None, y_pred=None):
+    
+        self._y_true = y_true
+        self._y_pred = y_pred 
     
     def _add_major_and_minor_ticks(self, ax):
         """Add minor and major tick marks"""
@@ -43,9 +47,48 @@ class VerificationDiagram:
         ax.set_xlabel('Mean Forecast Probability')
         ax.set_ylabel('Conditional Event Frequency')
         
+        if self._y_pred is not None:
+            self._right_ax = self.make_twin_ax(ax)
+     
         return ax 
     
+    def make_twin_ax(self, ax):
+        """
+        Create a twin axis on an existing axis with a shared x-axis
+        """
+        # align the twinx axis
+        twin_ax = ax.twinx()
+
+        # Turn twin_ax grid off.
+        twin_ax.grid(False)
+
+        # Set ax's patch invisible
+        ax.patch.set_visible(False)
+        # Set axtwin's patch visible and colorize it in grey
+        twin_ax.patch.set_visible(True)
+
+        # move ax in front
+        ax.set_zorder(twin_ax.get_zorder() + 1)
+
+        return twin_ax
     
+    def _plot_inset_ax(self, ax, line_colors):
+        """ Plot the histogram associated with the reliability diagram """
+        ax.grid(False)
+        for k, color in zip(self._y_pred.keys(), line_colors):
+            p = self._y_pred[k]
+            fcst_probs = np.round(p, 5)
+            self._right_ax.hist(fcst_probs, bins=np.arange(0,1.1,0.1), 
+                                alpha=0.5, histtype='step', ls='dashed', color=color)
+        
+        ax.tick_params(labelright=False, right=False) 
+        self._right_ax.set_ylabel('Samples (Dashed)')
+        ##self._right_ax.set_yticklabels([]) 
+        
+        return self._right_ax
+    
+    '''
+    Deprecated. But don't want to delete just yet. 
     def _plot_inset_ax(self, ax, pred, line_colors, inset_yticks = [1e1, 1e3] ): 
         """Plot the inset histogram for the attribute diagram."""
         import math
@@ -88,7 +131,7 @@ class VerificationDiagram:
             small_ax.plot(bin_centers, n, color=color, linewidth=0.6)
         
         return small_ax 
-        
+    '''    
     
     def _make_roc(self, ax, **diagram_kwargs):
         """
@@ -146,13 +189,12 @@ class VerificationDiagram:
         return ax, cf 
         
     def plot(self, diagram, x, y,
-             pred=None, 
              add_dots=True, 
              scores=None, 
              add_high_marker=False,
              line_colors=None,
              diagram_kwargs={}, 
-             plot_kwargs={}, ax=None): 
+             plot_kwargs={}, ax=None, table_bbox=None): 
         """
         Plot a performance, attribute, or ROC Diagram. 
         
@@ -172,8 +214,12 @@ class VerificationDiagram:
                       
             add_dots : True/False
             
-            add_table : True/False
         """
+        if scores is not None:
+            # Determine if scores is a nested dict. i.e., multiple models
+            if not any(isinstance(i,dict) for i in scores.values()):
+                scores = {'Model' : scores}
+            
         plot_kwargs['color'] = plot_kwargs.get('color', 'r')
         plot_kwargs['alpha'] = plot_kwargs.get('alpha', 0.7)
         plot_kwargs['linewidth'] = plot_kwargs.get('linewidth', 1.5)
@@ -182,8 +228,7 @@ class VerificationDiagram:
             line_colors = ['r', 'b', 'g', 'k']
         
         if ax is None:
-            mpl.pyplot.subplots
-            f, ax = plt.subplots(dpi=600, figsize=(4,4))
+            f, ax = plt.subplots(dpi=300, figsize=(4,4))
         
         self._set_axis_limits(ax)
         self._add_major_and_minor_ticks(ax)
@@ -197,8 +242,11 @@ class VerificationDiagram:
             ax, contours = self._make_roc(ax=ax, **diagram_kwargs)
         elif diagram == 'reliability':
             ax = self._make_reliability(ax=ax, **diagram_kwargs)
-            if pred is not None:
-                self._plot_inset_ax(ax, pred, line_colors)
+            if self._y_pred is not None:
+                self._plot_inset_ax(ax, line_colors)
+                
+            # TODO: improve the inset figure. 
+            # TODO: Add reliability uncertainty. 
             
         else:
             raise ValueError(f'{diagram} is not a valid choice!')
@@ -229,13 +277,18 @@ class VerificationDiagram:
 
             if diagram in ['roc', 'performance'] and add_dots:
                 # Add scatter points at particular intervals 
-                ax.scatter(_x[::10], _y[::10], s=15, marker=".", **plot_kwargs)
+                ax.scatter(_x[::20], _y[::20], s=100, marker=".", **plot_kwargs)
+                thresh = np.linspace(0,1,200)[::20]
+
+                for i,j,t in zip(_x[::20], _y[::20], thresh):
+                    ax.annotate(f'{int(t*100)}', (i,j), fontsize=7, zorder=6)
             
-            
+            csi = None
             if add_high_marker:
                 if diagram == 'roc':
                     highest_val = np.argmax(_x - _y)
                 else:
+                    csi = calc_csi(_x, _y)
                     highest_val = np.argmax(csi)
             
                 ax.scatter(
@@ -273,17 +326,34 @@ class VerificationDiagram:
             
                 ax.add_patch(polygon_patch)
         
+        # Add the table of metrics to the verification diagrams
+        # The code will attempt to determine the best location. 
         if scores is not None:
+            multiplier = len(keys) if len(keys) > 1 else 2
             if diagram == 'performance':
-                loc = 'upper center'
-            elif diagram == 'reliability':
-                loc = 'lower right'
-            elif diagram == 'roc':
-                loc = 'center right'
-            
+                if csi is None: 
+                    max_csi = np.max(calc_csi(_x, _y))
+                else:
+                    max_csi = np.max(csi)
+                        
+                if max_csi > 0.4:
+                    # For performance diagram curves in the upper right hand 
+                    # corner place the table in the lower left.
+                    bbox=[0.275, 0.025, 0.16*multiplier, 0.075*multiplier]        
+                else:
+                    # If the curve is in the lower left hand side, 
+                    # then place the table in the upper right. 
+                    bbox=[0.5, 0.75, 0.16*multiplier, 0.075*multiplier]    
+                        
+            else:
+                # For the ROC and Reliability diagram, we can place 
+                # the table in the lower right hand corner. 
+                bbox=[0.5, 0.025, 0.16*multiplier, 0.075*multiplier] 
+           
+            if table_bbox is None:
+                table_bbox = bbox
             
             table_data, rows, columns = to_table_data(scores)
-            
             rows = [f' {r} ' for r in rows]
             
             add_table(ax, table_data,
@@ -291,13 +361,13 @@ class VerificationDiagram:
                     column_labels=columns,
                     col_colors= None,
                     row_colors = {name : c for name,c in zip(rows, line_colors)},
-                    loc=loc,
+                    bbox=table_bbox,
                     colWidth=0.16,
                     fontsize=8)
             
         return ax
             
-def add_table(ax, table_data, row_labels, column_labels, row_colors, col_colors, loc='best',
+def add_table(ax, table_data, row_labels, column_labels, row_colors, col_colors, bbox,
         fontsize=3., extra=0.75, colWidth=0.16, ):
     """
     Adds a table
@@ -310,10 +380,10 @@ def add_table(ax, table_data, row_labels, column_labels, row_colors, col_colors,
                colWidths = [colWidth]*len(column_labels),
                rowLoc='center',
                cellLoc = 'center' , 
-               loc=loc, 
                colColours=col_colors,
                alpha=0.6,
-               zorder=5
+               zorder=5,
+               bbox=bbox
                 )
     the_table.auto_set_font_size(False)
     table_props = the_table.properties()
