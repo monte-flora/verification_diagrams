@@ -303,7 +303,7 @@ def performance_curve(y, predictions, bins=np.arange(0, 1, 0.005), deterministic
     to produce performance diagram (Roebber 2009) curves
     '''
     if deterministic:
-        table = ContingencyTable( y, predictions )
+        table = ContingencyTable(y, predictions)
         pod = table.calc_pod( )
         sr = table.calc_sr( )
     else:
@@ -312,8 +312,26 @@ def performance_curve(y, predictions, bins=np.arange(0, 1, 0.005), deterministic
 
         pod = np.array([t.calc_pod() for t in tables])
         sr = np.array([t.calc_sr() for t in tables])
+        
+    return sr, pod 
+
+def roc_curve(y, predictions, bins=np.arange(0, 1, 0.005), deterministic=False ):
+    ''' 
+    Generates the POD and POFD for a series of probability thresholds 
+    to produce the ROC curve. 
+    '''
+    if deterministic:
+        table = ContingencyTable(y, predictions)
+        pod = table.calc_pod( )
+        sr = table.calc_sr( )
+    else:
+        tables = [ ContingencyTable(y.astype(int), np.where(np.round(predictions,10)
+                >= round(p,5),1,0).astype(int)) for p in bins]
+
+        pod = np.array([t.calc_pod() for t in tables])
         pofd = np.array([t.calc_pofd() for t in tables])
-    return pod, pofd, sr
+
+    return pofd, pod 
 
 def reliability_curve(y_true, y_pred, n_bins=10, return_indices=False):
     """
@@ -345,9 +363,7 @@ def reliability_curve(y_true, y_pred, n_bins=10, return_indices=False):
     else:
         return np.array(mean_fcst_probs), np.array(event_frequency) 
 
-    
-    
-    
+   
 def reliability_uncertainty(y_true, y_pred, n_iter = 1000, n_bins=10 ):
     '''
     Calculates the uncertainty of the event frequency based on Brocker and Smith (WAF, 2007)

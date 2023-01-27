@@ -1,5 +1,10 @@
 import numpy as np 
-from sklearn.metrics import precision_recall_curve, roc_curve, average_precision_score, f1_score, brier_score_loss
+from sklearn.metrics import (precision_recall_curve, 
+                             average_precision_score, 
+                             f1_score, 
+                             roc_curve,
+                             brier_score_loss,
+                            )
 from sklearn.metrics import roc_auc_score
 from sklearn.utils import resample
 from scipy import interpolate
@@ -10,7 +15,10 @@ import warnings
 from shapely.errors import ShapelyDeprecationWarning
 warnings.filterwarnings("ignore", category=ShapelyDeprecationWarning) 
 
-from ._metrics import reliability_curve, brier_skill_score
+from ._metrics import (reliability_curve, 
+                       performance_curve,
+                       brier_skill_score,
+                      )
 
 def bootstrap_generator(n_bootstrap, seed=42):
     """
@@ -78,6 +86,7 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
     N = 200
     if metric == 'performance':
         func = precision_recall_curve
+        #func = performance_curve
         if scorers is None:
             scorers = {'AUPDC' : average_precision_score,}
     elif metric == 'roc':
@@ -117,8 +126,6 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
             x_fp = x[:-1] if metric == 'performance' else x
             y_fp = y[:-1] if metric == 'performance' else y
             
-            #x = np.interp(sampled_thresholds, threshold, x_fp)
-            #y = np.interp(sampled_thresholds, threshold, y_fp)
             fx = interpolate.interp1d(threshold, x_fp, fill_value='extrapolate')
             fy = interpolate.interp1d(threshold, y_fp, fill_value='extrapolate')
             
@@ -131,6 +138,70 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
         sampled_y.append(y)
     
     return np.array(sampled_x), np.array(sampled_y), scores
+
+
+def compute_multiple_curves(y_true, y_pred, names, 
+                         metric='performance', n_boot=1, scorers=None, random_seed=42):
+    """Compute multiple curves for a given verification diagram
+    
+    y_true : array (n_samples,)
+        True values 
+    y_pred : array or list of arrays [(n_samples,), (n_samples), ...]
+        Prediction values. If computing for multiple curves, then 
+        send in a list of (n_samples,) predictions.
+    names : list of str
+        The name given for each prediction in y_pred
+    metric : 'performance', 'roc', or 'reliability'
+        The verification diagram curve to compute for. 
+    
+    n_boot : int 
+        Number of bootstrap iterations. 
+        
+    groups : array-like of shape (n_samples,) (default=None)
+        array of indexs (0,1,2,etc) indicating groupings of the 
+        predictions. This is useful when the data is not 
+        fully independent and we want the bootstrapping 
+        to be based on quasi-dependent samples. 
+        The idea is that only data from a given index is 
+        consider per bootstrap iteration with the index 
+        being randomly chosen per bootstrap iteration. 
+    
+    scorers : dict of objects (default=None)
+        For computational efficiency, you can provide a dict of 
+        scorers to be computed per bootstrap iteration. 
+        E.g., scorers = {'AUPDC' : average_precision_score, 
+                         'AUC' : roc_auc_score}
+    
+    random_seed : int
+        Random seed to control the randomness of the bootstrapping.
+    
+    """
+    xp = {}
+    yp = {} 
+    scores = {}
+    pred = {}
+    
+    if np.ndim(y_pred)==1:
+        y_pred = [y_pred]
+    
+    if isinstance(names, str):
+        names = [names]
+    
+    for name, predictions in zip(names, y_pred):
+        _x, _y, _scores = sklearn_curve_bootstrap(
+                                    y_true, 
+                                    predictions, 
+                metric=metric,
+                n_boot=n_boot)
+    
+        xp[name] = _x
+        yp[name] = _y
+        pred[name] = predictions
+        scores[name] = _scores
+        
+    return xp, yp, pred, scores
+        
+
 
 
 def _confidence_interval_to_polygon(
