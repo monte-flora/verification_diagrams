@@ -96,7 +96,7 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
     random_num_set = bootstrap_generator(n_boot, seed=random_seed)
     
     for i in range(n_boot):
-        if n_boot==1:
+        if n_boot>1:
             idx = resample(range(len(y_true)), replace=True, random_state=random_num_set[i])
         else:
             idx = range(len(y_true))
