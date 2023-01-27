@@ -194,7 +194,7 @@ class VerificationDiagram:
              add_high_marker=False,
              line_colors=None,
              diagram_kwargs={}, 
-             plot_kwargs={}, ax=None, table_bbox=None): 
+             plot_kwargs={}, ax=None, table_bbox=None, pred=None): 
         """
         Plot a performance, attribute, or ROC Diagram. 
         
@@ -220,12 +220,21 @@ class VerificationDiagram:
             if not any(isinstance(i,dict) for i in scores.values()):
                 scores = {'Model' : scores}
             
-        plot_kwargs['color'] = plot_kwargs.get('color', 'r')
+        #plot_kwargs['color'] = plot_kwargs.get('color', 'r')
         plot_kwargs['alpha'] = plot_kwargs.get('alpha', 0.7)
         plot_kwargs['linewidth'] = plot_kwargs.get('linewidth', 1.5)
         
-        if line_colors is None:
-            line_colors = ['r', 'b', 'g', 'k']
+        line_colors = plot_kwargs.get('line_colors', ['r', 'b', 'g', 'k', 'gray', 'purple'])
+        line_styles = plot_kwargs.get('line_styles', ['-'])
+        
+        matplot_kwargs = plot_kwargs.copy()
+        
+        
+        if 'line_colors' in matplot_kwargs.keys():
+            matplot_kwargs.pop('line_colors')
+                
+        if 'line_styles' in matplot_kwargs.keys():
+            matplot_kwargs.pop('line_styles')
         
         if ax is None:
             f, ax = plt.subplots(dpi=300, figsize=(4,4))
@@ -257,11 +266,15 @@ class VerificationDiagram:
         
         keys = x.keys()
         
+        if len(line_styles) == 1:
+            line_styles = line_styles*len(keys)
+        
         error_bars=False
-        for line_label, color in zip(keys, line_colors):
+        for line_label, color, ls in zip(keys, line_colors, line_styles):
             _x = x[line_label]
             _y = y[line_label]
-            plot_kwargs['color'] = color
+            matplot_kwargs['color'] = color
+            matplot_kwargs['ls'] = ls
             
             if _x.ndim == 2:
                 error_bars=True
@@ -273,11 +286,11 @@ class VerificationDiagram:
                     
             line_label = None if line_label == 'Label' else line_label
     
-            ax.plot(_x, _y, label=line_label,**plot_kwargs)
+            ax.plot(_x, _y, label=line_label,**matplot_kwargs)
 
             if diagram in ['roc', 'performance'] and add_dots:
                 # Add scatter points at particular intervals 
-                ax.scatter(_x[::20], _y[::20], s=100, marker=".", **plot_kwargs)
+                ax.scatter(_x[::20], _y[::20], s=100, marker=".", **matplot_kwargs)
                 thresh = np.linspace(0,1,200)[::20]
 
                 for i,j,t in zip(_x[::20], _y[::20], thresh):
@@ -329,7 +342,11 @@ class VerificationDiagram:
         # Add the table of metrics to the verification diagrams
         # The code will attempt to determine the best location. 
         if scores is not None:
-            multiplier = len(keys) if len(keys) > 1 else 2
+            table_data, rows, columns = to_table_data(scores)
+            rows = [f' {r} ' for r in rows]
+            
+            n_rows, n_cols= np.shape(table_data)
+
             if diagram == 'performance':
                 if csi is None: 
                     max_csi = np.max(calc_csi(_x, _y))
@@ -339,22 +356,20 @@ class VerificationDiagram:
                 if max_csi > 0.4:
                     # For performance diagram curves in the upper right hand 
                     # corner place the table in the lower left.
-                    bbox=[0.275, 0.025, 0.16*multiplier, 0.075*multiplier]        
+                    bbox=[0.275, 0.025, 0.16*n_cols, 0.075*n_rows]        
                 else:
                     # If the curve is in the lower left hand side, 
                     # then place the table in the upper right. 
-                    bbox=[0.5, 0.75, 0.16*multiplier, 0.075*multiplier]    
+                    bbox=[0.75, 0.70, 0.16*n_cols, 0.075*n_rows]    
                         
             else:
                 # For the ROC and Reliability diagram, we can place 
                 # the table in the lower right hand corner. 
-                bbox=[0.5, 0.025, 0.16*multiplier, 0.075*multiplier] 
+                bbox=[0.85, 0.025, 0.16*n_cols, 0.075*n_rows] 
            
             if table_bbox is None:
                 table_bbox = bbox
-            
-            table_data, rows, columns = to_table_data(scores)
-            rows = [f' {r} ' for r in rows]
+                     
             
             add_table(ax, table_data,
                     row_labels=rows,
@@ -368,7 +383,7 @@ class VerificationDiagram:
         return ax
             
 def add_table(ax, table_data, row_labels, column_labels, row_colors, col_colors, bbox,
-        fontsize=3., extra=0.75, colWidth=0.16, ):
+        fontsize=3., extra=0.7, colWidth=0.16, ):
     """
     Adds a table
     """

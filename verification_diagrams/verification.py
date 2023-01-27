@@ -21,7 +21,7 @@ import warnings
 def plot_verification(estimators, X, y, 
                       baseline_estimators=None, 
                       X_baseline=None, 
-                      n_boot=10, style='classification'):
+                      n_boot=10, style='classification', **kwargs):
     
     """Plot Classification- or Regression-based verification."""
     verify = VerificationDiagram()
@@ -70,7 +70,7 @@ def plot_verification(estimators, X, y,
                 pred[name] = predictions
                 scores[name] = _scores
     
-        verify.plot(diagram=metric, x=xp, y=yp, ax=ax, scores=scores, pred=pred)
+        verify.plot(diagram=metric, x=xp, y=yp, ax=ax, scores=scores, pred=pred, plot_kwargs=kwargs)
     
     axes.flat[-1].remove()
     

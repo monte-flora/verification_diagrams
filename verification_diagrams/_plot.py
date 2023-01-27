@@ -9,10 +9,11 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from ._diagrams import VerificationDiagram
 from ._curve_utils import sklearn_curve_bootstrap
 
-def plot_verification(y, y_pred, names, style='classification', n_boot=10):
+def plot_verification(y, y_pred, names, style='classification', 
+                      n_boot=10, figsize=(8,8), table_bbox=None, plot_kwargs={}):
     """Plot Classification- or Regression-based verification."""
     verify = VerificationDiagram()
-    fig, axes = plt.subplots(dpi=300, figsize=(8,8), ncols=2, nrows=2)
+    fig, axes = plt.subplots(dpi=300, figsize=figsize, ncols=2, nrows=2)
     
     if style == 'classification':
         metrics = ['reliability', 'roc', 'performance']
@@ -37,10 +38,12 @@ def plot_verification(y, y_pred, names, style='classification', n_boot=10):
             pred[name] = predictions
             scores[name] = _scores
        
-        verify.plot(diagram=metric, x=xp, y=yp, ax=ax, scores=scores, pred=pred)
+        verify.plot(diagram=metric, x=xp, y=yp, ax=ax, scores=scores, pred=y_pred, table_bbox=table_bbox, 
+                    plot_kwargs=plot_kwargs)
     
     axes.flat[-1].remove()
 
+    return fig, axes
 
 
 '''
