@@ -18,7 +18,13 @@ warnings.filterwarnings("ignore", category=ShapelyDeprecationWarning)
 from ._metrics import (reliability_curve, 
                        performance_curve,
                        brier_skill_score,
+                       max_csi, 
+                       norm_aupdc,
+                       norm_csi,
                       )
+
+RETURN_MULTIPLE_METRICS = ['CSI']
+SKEW_BASED_METRICS = [max_csi, norm_aupdc, norm_csi] 
 
 def bootstrap_generator(n_bootstrap, seed=42):
     """
@@ -88,7 +94,9 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
         func = precision_recall_curve
         #func = performance_curve
         if scorers is None:
-            scorers = {'AUPDC' : average_precision_score,}
+            scorers = {'NAUPDC' : norm_aupdc,
+                       'NCSI' : norm_csi, 
+                      }
     elif metric == 'roc':
         func = roc_curve
         if scorers is None:
@@ -104,6 +112,8 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
     
     random_num_set = bootstrap_generator(n_boot, seed=random_seed)
     
+    known_skew = kws.get('known_skew', np.mean(y_true))
+    
     for i in range(n_boot):
         if n_boot>1:
             idx = resample(range(len(y_true)), replace=True, random_state=random_num_set[i])
@@ -113,7 +123,10 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
         curves.append(func(y_true[idx], y_pred[idx], **kws))
         
         for k in scorers.keys():
-            scores[k].append(scorers[k](y_true[idx], y_pred[idx]))
+            if scorers[k] in SKEW_BASED_METRICS:
+                scores[k].append(scorers[k](y_true[idx], y_pred[idx], known_skew=known_skew))
+            else:
+                scores[k].append(scorers[k](y_true[idx], y_pred[idx]))
         
     sampled_thresholds = np.linspace(0.001, 0.99, N)
     sampled_x = []
@@ -201,8 +214,6 @@ def compute_multiple_curves(y_true, y_pred, names,
         
     return xp, yp, pred, scores
         
-
-
 
 def _confidence_interval_to_polygon(
     x_coords_bottom,

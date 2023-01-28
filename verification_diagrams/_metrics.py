@@ -36,6 +36,8 @@ def brier_score(y, predictions):
 def brier_skill_score(y, predictions):
     return 1.0 - brier_score(y, predictions) / brier_score(y, y.mean())
 
+
+
 def max_csi(y, predictions, known_skew):
     """
     Compute normalized maximum CSI 
@@ -51,7 +53,7 @@ def max_csi(y, predictions, known_skew):
     norm_max_csi = norm_csi(y, predictions, known_skew)
     bias = pod / sr
 
-    return max_csi, norm_max_csi, bias[idx]
+    return {'MAX_CSI' : max_csi, 'NCSI' : norm_max_csi, 'FB' : bias[idx]}
 
 
 def bss_reliability(y, predictions):
@@ -147,8 +149,6 @@ def norm_csi(y_true, y_score, known_skew, pos_label=1, sample_weight=None):
     
     return ncsi 
     
-
-
 def norm_aupdc(y_true, y_score, known_skew, *, average="macro", pos_label=1,
                             sample_weight=None, min_method='random'):
     """

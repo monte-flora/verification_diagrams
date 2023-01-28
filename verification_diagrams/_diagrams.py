@@ -3,9 +3,12 @@ import shapely.geometry
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np 
+import pandas as pd
 from descartes import PolygonPatch
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+import seaborn as sns
+import math
 
 import warnings
 #from shapely.errors import ShapelyDeprecationWarning
@@ -13,7 +16,7 @@ import warnings
 
 # Internal package(s)
 from ._curve_utils import _confidence_interval_to_polygon
-from ._metrics import calc_csi
+from ._metrics import calc_csi, reliability_uncertainty
 
 class VerificationDiagram:
     mpl.rcParams["axes.titlepad"] = 15
@@ -72,20 +75,50 @@ class VerificationDiagram:
 
         return twin_ax
     
+    def set_log_yticks(self, ax):
+
+        cols = ax.patches
+        vals = [p.get_height() for p in cols] 
+
+        def orderOfMagnitude(number):
+            return math.floor(math.log(number, 10))
+        
+        om = orderOfMagnitude(np.max(vals))
+        ticks = [10**i for i in range(om+3) ]
+    
+        ax.set_yticks(ticks)
+    
+        return ax 
+    
     def _plot_inset_ax(self, ax, line_colors):
         """ Plot the histogram associated with the reliability diagram """
-        ax.grid(False)
-        for k, color in zip(self._y_pred.keys(), line_colors):
-            p = self._y_pred[k]
-            fcst_probs = np.round(p, 5)
-            self._right_ax.hist(fcst_probs, bins=np.arange(0,1.1,0.1), 
-                                alpha=0.5, histtype='step', ls='dashed', color=color)
+        ax.grid(False)   
+        bins = np.arange(0,1.1,0.1)
+        df = pd.DataFrame(self._y_pred) 
+        data = df.melt()
+
+        # plot melted dataframe in a single command
+        sns.histplot(data, x='value', hue='variable', palette=line_colors,
+             multiple='dodge', shrink=.7, bins=bins, ax=ax, alpha=0.1, legend=False)
+
+        ax.set_yscale('log')
+        ax.set_ylabel(r'Samples')    
+        ax = self.set_log_yticks(ax)
+
+        #ax.set_zorder(15)  # default zorder is 0 for ax1 and ax2
+        #ax.set_frame_on(False)  # prevents ax1 from hiding ax2
         
-        ax.tick_params(labelright=False, right=False) 
-        self._right_ax.set_ylabel('Samples (Dashed)')
-        ##self._right_ax.set_yticklabels([]) 
-        
-        return self._right_ax
+        return ax
+    
+    def _plot_reliability_uncertainty(self, ax, line_colors):
+        d=0.05
+        for i, (name, color) in enumerate(zip(self._y_pred.keys(), line_colors)):
+            _, _, ef_low, ef_up = reliability_uncertainty(self._y_true, self._y_pred[name], n_iter=100)
+
+            x = np.linspace(0.5+(d*i),1,len(ef_low))
+    
+            ax.errorbar(x,x,yerr=[ef_low, ef_up], capsize=2.5, 
+                fmt="o", ms=0.1, color=color, alpha=0.6)
     
     '''
     Deprecated. But don't want to delete just yet. 
@@ -191,7 +224,7 @@ class VerificationDiagram:
     def plot(self, diagram, x, y,
              add_dots=True, 
              scores=None, 
-             add_high_marker=False,
+             add_max_marker=False,
              line_colors=None,
              diagram_kwargs={}, 
              plot_kwargs={}, ax=None, table_bbox=None, pred=None): 
@@ -219,8 +252,7 @@ class VerificationDiagram:
             # Determine if scores is a nested dict. i.e., multiple models
             if not any(isinstance(i,dict) for i in scores.values()):
                 scores = {'Model' : scores}
-            
-        #plot_kwargs['color'] = plot_kwargs.get('color', 'r')
+
         plot_kwargs['alpha'] = plot_kwargs.get('alpha', 0.7)
         plot_kwargs['linewidth'] = plot_kwargs.get('linewidth', 1.5)
         
@@ -228,8 +260,7 @@ class VerificationDiagram:
         line_styles = plot_kwargs.get('line_styles', ['-'])
         
         matplot_kwargs = plot_kwargs.copy()
-        
-        
+
         if 'line_colors' in matplot_kwargs.keys():
             matplot_kwargs.pop('line_colors')
                 
@@ -252,10 +283,10 @@ class VerificationDiagram:
         elif diagram == 'reliability':
             ax = self._make_reliability(ax=ax, **diagram_kwargs)
             if self._y_pred is not None:
-                self._plot_inset_ax(ax, line_colors)
+                self._plot_inset_ax(self._right_ax, line_colors)
                 
-            # TODO: improve the inset figure. 
-            # TODO: Add reliability uncertainty. 
+            if self._y_pred is not None:
+                self._plot_reliability_uncertainty(ax, line_colors)
             
         else:
             raise ValueError(f'{diagram} is not a valid choice!')
@@ -297,19 +328,21 @@ class VerificationDiagram:
                     ax.annotate(f'{int(t*100)}', (i,j), fontsize=7, zorder=6)
             
             csi = None
-            if add_high_marker:
+            if diagram in ['roc', 'performance'] and add_max_marker:
                 if diagram == 'roc':
                     highest_val = np.argmax(_x - _y)
                 else:
                     csi = calc_csi(_x, _y)
                     highest_val = np.argmax(csi)
             
+                #matplot_kwargs['s'] = matplot_kwargs.get('s', 65)
+                #matplot_kwargs['marker'] = matplot_kwargs.get('marker', 'X')
                 ax.scatter(
                         _x[highest_val],
                         _y[highest_val],
                         s=65,
-                        marker = "X", 
-                        **plot_kwargs, 
+                        marker='X',
+                        **matplot_kwargs, 
                         )
             
         if error_bars:
@@ -346,7 +379,9 @@ class VerificationDiagram:
             rows = [f' {r} ' for r in rows]
             
             n_rows, n_cols= np.shape(table_data)
-
+            d_cols = n_cols-1 
+            shift = d_cols*0.16
+            
             if diagram == 'performance':
                 if csi is None: 
                     max_csi = np.max(calc_csi(_x, _y))
@@ -356,11 +391,11 @@ class VerificationDiagram:
                 if max_csi > 0.4:
                     # For performance diagram curves in the upper right hand 
                     # corner place the table in the lower left.
-                    bbox=[0.275, 0.025, 0.16*n_cols, 0.075*n_rows]        
+                    bbox=[0.275-shift, 0.025, 0.16*n_cols, 0.075*n_rows]        
                 else:
                     # If the curve is in the lower left hand side, 
                     # then place the table in the upper right. 
-                    bbox=[0.75, 0.70, 0.16*n_cols, 0.075*n_rows]    
+                    bbox=[0.75-shift, 0.70, 0.16*n_cols, 0.075*n_rows]    
                         
             else:
                 # For the ROC and Reliability diagram, we can place 
@@ -370,7 +405,6 @@ class VerificationDiagram:
             if table_bbox is None:
                 table_bbox = bbox
                      
-            
             add_table(ax, table_data,
                     row_labels=rows,
                     column_labels=columns,
