@@ -2,7 +2,6 @@ import numpy as np
 from sklearn.metrics import (precision_recall_curve, 
                              average_precision_score, 
                              f1_score, 
-                             roc_curve,
                              brier_score_loss,
                             )
 from sklearn.metrics import roc_auc_score
@@ -17,6 +16,7 @@ warnings.filterwarnings("ignore", category=ShapelyDeprecationWarning)
 
 from ._metrics import (reliability_curve, 
                        performance_curve,
+                       roc_curve, 
                        brier_skill_score,
                        max_csi, 
                        norm_aupdc,
@@ -91,8 +91,8 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
         
     N = 200
     if metric == 'performance':
-        func = precision_recall_curve
-        #func = performance_curve
+        #func = precision_recall_curve
+        func = performance_curve
         if scorers is None:
             scorers = {'NAUPDC' : norm_aupdc,
                        'NCSI' : norm_csi, 
@@ -134,7 +134,7 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
     # assume curves is a list of (precision, recall, threshold)
     # tuples where each of those three is a numpy array
     for pair in curves:
-        if metric in ['performance', 'roc']:
+        if metric in ['None']: #['performance', 'roc']:
             x, y, threshold = pair
             x_fp = x[:-1] if metric == 'performance' else x
             y_fp = y[:-1] if metric == 'performance' else y

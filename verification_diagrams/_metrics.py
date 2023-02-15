@@ -242,117 +242,87 @@ class ContingencyTable:
     Can use determinstic and probabilistic input.     
     '''
     def __init__( self, y, predictions ):
-        hits = np.sum( np.where(( y == 1) & ( predictions == 1 ), 1, 0 ) )
-        false_alarms = np.sum( np.where(( y == 0) & ( predictions == 1 ), 1, 0 ) )
-        misses = np.sum( np.where(( y == 1) & ( predictions == 0), 1, 0 ) )
-        corr_negs = np.sum( np.where(( y == 0) & ( predictions == 0 ),  1, 0 ) )
-
-        self.table = np.array( [ [hits, misses], [false_alarms, corr_negs]], dtype=float)
-        # Hit: self.table[0,0]
-        # Miss: self.table[0,1]
-        # False Alarms: self.table[1,0]
-        # Corr Neg. : self.table[1,1] 
-
+        self.y = y
+        self.predictions = predictions
+        self.hits = np.sum((y == 1) & (predictions == 1))
+        self.false_alarms = np.sum((y == 0) & (predictions == 1))
+        self.misses = np.sum((y == 1) & (predictions == 0))
+        self.corr_negs = np.sum((y == 0) & (predictions == 0))
+        
     def calc_pod(self):
-        '''
-        Probability of Detection (POD) or Hit Rate. 
-        Formula: hits / hits + misses
-        '''
-        ##print self.table[0,0] / (self.table[0,0] + self.table[0,1])
-        return self.table[0,0] / (self.table[0,0] + self.table[0,1])
+        return self.hits / (self.hits + self.misses)
 
     def calc_pofd(self):
-        '''
-        Probability of False Detection.
-        Formula: false alarms / false alarms + correct negatives
-        '''
-        return self.table[1,0] / (self.table[1,0] + self.table[1,1])
+        return self.false_alarms / (self.false_alarms + self.corr_negs)
 
     def calc_sr(self):
-        '''
-        Success Ratio (1 - FAR).
-        Formula: hits / (hits+false alarms)
-        '''
-        if self.table[0,0] + self.table[1,0] == 0.0:
-            return 1.
-        else:
-            return self.table[0,0] / (self.table[0,0] + self.table[1,0])
+        return self.hits / (self.hits + self.false_alarms) if self.hits + self.false_alarms != 0 else 1.
 
     @staticmethod
     def calc_bias(pod, sr):
-        '''
-        Frequency Bias.
-        Formula: POD / SR ; (hits + misses) / (hits + false alarms)  
-        '''
         sr[np.where(sr==0)] = 1e-5
         return pod / sr
 
     @staticmethod
     def calc_csi(pod, sr):
-        '''
-        Critical Success Index.
-        Formula: Hits / ( Hits+Misses+FalseAlarms)
-        '''
         sr[np.where(sr==0)] = 1e-5
         pod[np.where(pod==0)] = 1e-5
         return 1. /((1./sr) + (1./pod) - 1.)
+
 
 def performance_curve(y, predictions, bins=np.arange(0, 1, 0.005), deterministic=False ):
     ''' 
     Generates the POD and SR for a series of probability thresholds 
     to produce performance diagram (Roebber 2009) curves
     '''
+    predictions = np.round(predictions,5)
+    
     if deterministic:
         table = ContingencyTable(y, predictions)
         pod = table.calc_pod( )
         sr = table.calc_sr( )
     else:
-        tables = [ ContingencyTable(y.astype(int), np.where(np.round(predictions,10)
-                >= round(p,5),1,0).astype(int)) for p in bins]
+        tables = [ContingencyTable(y, np.where(predictions >= p, 1, 0)) for p in bins]
 
         pod = np.array([t.calc_pod() for t in tables])
         sr = np.array([t.calc_sr() for t in tables])
         
-    return sr, pod 
+    return sr, pod
 
 def roc_curve(y, predictions, bins=np.arange(0, 1, 0.005), deterministic=False ):
     ''' 
     Generates the POD and POFD for a series of probability thresholds 
     to produce the ROC curve. 
     '''
+    predictions = np.round(predictions,5)
     if deterministic:
         table = ContingencyTable(y, predictions)
         pod = table.calc_pod( )
         sr = table.calc_sr( )
     else:
-        tables = [ ContingencyTable(y.astype(int), np.where(np.round(predictions,10)
-                >= round(p,5),1,0).astype(int)) for p in bins]
+        tables = [ContingencyTable(y, np.where(predictions >= p, 1, 0)) for p in bins]
 
         pod = np.array([t.calc_pod() for t in tables])
         pofd = np.array([t.calc_pofd() for t in tables])
 
     return pofd, pod 
 
+
+#ChatGPT generated code. 
 def reliability_curve(y_true, y_pred, n_bins=10, return_indices=False):
     """
     Generate a reliability (calibration) curve. 
-    Bins can be empty for both the mean forecast probabilities 
-    and event frequencies and will be replaced with nan values. 
-    Unlike the scikit-learn method, this will make sure the output
-    shape is consistent with the requested bin count. The output shape
-    is (n_bins+1,) as I artifically insert the origin (0,0) so the plot
-    looks correct. 
     """
     bin_edges = np.linspace(0,1, n_bins+1)
-    bin_indices = np.clip(
-                np.digitize(y_pred, bin_edges, right=True) - 1, 0, None
-                )
+    bin_indices = np.clip(np.digitize(y_pred, bin_edges, right=True) - 1, 0, None)
 
-    indices = [np.where(bin_indices==i+1)
-               if len(np.where(bin_indices==i+1)[0]) > 0 else np.nan for i in range(n_bins) ]
-
-    mean_fcst_probs = [np.nan if i is np.nan else np.mean(y_pred[i]) for i in indices]
-    event_frequency = [np.nan if i is np.nan else np.sum(y_true[i]) / len(i[0]) for i in indices]
+    mean_fcst_probs, event_frequency = [], []
+    indices = []
+    for i in range(n_bins):
+        idx = np.where(bin_indices==i+1)
+        mean_fcst_probs.append(np.mean(y_pred[idx]) if len(idx[0]) > 0 else np.nan)
+        event_frequency.append(np.sum(y_true[idx]) / len(idx[0]) if len(idx[0]) > 0 else np.nan)
+        indices.append(idx)
 
     # Adding the origin to the data
     mean_fcst_probs.insert(0,0)
@@ -363,7 +333,7 @@ def reliability_curve(y_true, y_pred, n_bins=10, return_indices=False):
     else:
         return np.array(mean_fcst_probs), np.array(event_frequency) 
 
-   
+    
 def reliability_uncertainty(y_true, y_pred, n_iter = 1000, n_bins=10 ):
     '''
     Calculates the uncertainty of the event frequency based on Brocker and Smith (WAF, 2007)
@@ -409,33 +379,3 @@ def _get_binary_xentropy(target_values, forecast_probabilities):
         target_values * np.log2(forecast_probabilities) +
         (1 - target_values) * np.log2(1 - forecast_probabilities))
 
-
-
-'''
-def reliability_curve(targets, predictions, n_bins=10):
-    """
-    Generate a reliability (calibration) curve. 
-    Bins can be empty for both the mean forecast probabilities 
-    and event frequencies and will be replaced with nan values. 
-    Unlike the scikit-learn method, this will make sure the output
-    shape is consistent with the requested bin count. The output shape
-    is (n_bins+1,) as I artifically insert the origin (0,0) so the plot
-    looks correct. 
-    """
-    bin_edges = np.linspace(0,1, n_bins+1)
-    bin_indices = np.clip(
-                np.digitize(predictions, bin_edges, right=True) - 1, 0, None
-                )
-
-    indices = [np.where(bin_indices==i+1)
-               if len(np.where(bin_indices==i+1)[0]) > 0 else np.nan for i in range(n_bins) ]
-
-    mean_fcst_probs = [np.nan if i is np.nan else np.nanmean(predictions[i]) for i in indices]
-    event_frequency = [np.nan if i is np.nan else np.sum(targets[i]) / len(i[0]) for i in indices]
-
-    # Adding the origin to the data
-    mean_fcst_probs.insert(0,0)
-    event_frequency.insert(0,0)
-        
-    return np.array(mean_fcst_probs), np.array(event_frequency), indices
-'''

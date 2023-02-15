@@ -285,7 +285,7 @@ class VerificationDiagram:
             if self._y_pred is not None:
                 self._plot_inset_ax(self._right_ax, line_colors)
                 
-            if self._y_pred is not None:
+            if self._y_pred is not None and self._y_true is not None:
                 self._plot_reliability_uncertainty(ax, line_colors)
             
         else:
@@ -308,7 +308,8 @@ class VerificationDiagram:
             matplot_kwargs['ls'] = ls
             
             if _x.ndim == 2:
-                error_bars=True
+                if _x.shape[0]>1:
+                    error_bars=True
                 
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", category=RuntimeWarning)
@@ -344,7 +345,8 @@ class VerificationDiagram:
                         marker='X',
                         **matplot_kwargs, 
                         )
-            
+        
+        error_bars=False
         if error_bars:
             # Adds the 95% confidence interval.
             for line_label, color in zip(keys, line_colors):
@@ -363,6 +365,8 @@ class VerificationDiagram:
                     y_coords_top,
                     for_performance_diagram=for_performance_diagram,
                 )   
+            
+                ##print(polygon_object, np.shape(polygon_object))
             
                 polygon_colour = mpl.colors.to_rgba(color, 0.4)
             
