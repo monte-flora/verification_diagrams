@@ -194,7 +194,7 @@ def compute_multiple_curves(y_true, y_pred, names,
     scores = {}
     pred = {}
     
-    if np.ndim(y_pred)==1:
+    if not isinstance(y_pred, list):
         y_pred = [y_pred]
     
     if isinstance(names, str):
@@ -204,13 +204,16 @@ def compute_multiple_curves(y_true, y_pred, names,
         _x, _y, _scores = sklearn_curve_bootstrap(
                                     y_true, 
                                     predictions, 
-                metric=metric,
-                n_boot=n_boot)
+                                    metric=metric,
+                                    n_boot=n_boot, 
+                                    scorers=scorers)
     
         xp[name] = _x
         yp[name] = _y
         pred[name] = predictions
         scores[name] = _scores
+        
+    print(f'{scores=}')    
         
     return xp, yp, pred, scores
         
@@ -277,7 +280,9 @@ def _confidence_interval_to_polygon(
         (y_coords_top, y_coords_bottom, np.array([y_coords_top[0]]))
     )
 
-    return vertex_arrays_to_polygon_object(polygon_x_coords, polygon_y_coords)
+    return  polygon_x_coords, polygon_y_coords
+    
+    #return vertex_arrays_to_polygon_object(polygon_x_coords, polygon_y_coords)
 
 
 def vertex_arrays_to_polygon_object(

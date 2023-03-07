@@ -346,7 +346,6 @@ class VerificationDiagram:
                         **matplot_kwargs, 
                         )
         
-        error_bars=False
         if error_bars:
             # Adds the 95% confidence interval.
             for line_label, color in zip(keys, line_colors):
@@ -358,7 +357,7 @@ class VerificationDiagram:
                     x_coords_bottom, x_coords_top = np.nanpercentile(_x, (2.5, 97.5), axis=0)
                     y_coords_bottom, y_coords_top = np.nanpercentile(_y, (2.5, 97.5), axis=0)
                 
-                polygon_object = _confidence_interval_to_polygon(
+                xci, yci = _confidence_interval_to_polygon(
                     x_coords_bottom,
                     y_coords_bottom,
                     x_coords_top,
@@ -366,24 +365,23 @@ class VerificationDiagram:
                     for_performance_diagram=for_performance_diagram,
                 )   
             
-                ##print(polygon_object, np.shape(polygon_object))
+                ax.fill_between(xci, yci, 
+                 color=color, alpha=0.4, interpolate=False)
             
-                polygon_colour = mpl.colors.to_rgba(color, 0.4)
-            
-                polygon_patch = PolygonPatch(
-                    polygon_object, lw=0, ec=polygon_colour, fc=polygon_colour
-                )   
-            
-                ax.add_patch(polygon_patch)
+
         
         # Add the table of metrics to the verification diagrams
         # The code will attempt to determine the best location. 
         if scores is not None:
             table_data, rows, columns = to_table_data(scores)
             rows = [f' {r} ' for r in rows]
+           
             
             n_rows, n_cols= np.shape(table_data)
-            d_cols = n_cols-1 
+            n_rows = max(1, n_rows)
+            n_cols = max(1, n_cols)
+            
+            d_cols = n_cols-1
             shift = d_cols*0.16
             
             if diagram == 'performance':
@@ -392,7 +390,7 @@ class VerificationDiagram:
                 else:
                     max_csi = np.max(csi)
                         
-                if max_csi > 0.4:
+                if max_csi >= 0.4:
                     # For performance diagram curves in the upper right hand 
                     # corner place the table in the lower left.
                     bbox=[0.275-shift, 0.025, 0.16*n_cols, 0.075*n_rows]        
@@ -408,7 +406,7 @@ class VerificationDiagram:
            
             if table_bbox is None:
                 table_bbox = bbox
-                     
+                    
             add_table(ax, table_data,
                     row_labels=rows,
                     column_labels=columns,
