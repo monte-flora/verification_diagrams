@@ -114,9 +114,23 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
     
     known_skew = kws.get('known_skew', np.mean(y_true))
     
+    if groups is not None:
+        unique_groups = np.unique(groups) 
+
     for i in range(n_boot):
         if n_boot>1:
-            idx = resample(range(len(y_true)), replace=True, random_state=random_num_set[i])
+            if groups is not None:
+                # Select the group that will be subsampled.
+                rs = np.random.RandomState(random_num_set[i])
+                _group = rs.choice(unique_groups)
+            
+                # Get the indices of _group 
+                _group_inds = np.where(groups==_group)[0]
+                
+                # Get a random bootstrap sample of the _group_inds
+                idx = resample(_group_inds, replace=True, random_state=random_num_set[i]) 
+            else:
+                idx = resample(range(len(y_true)), replace=True, random_state=random_num_set[i])
         else:
             idx = range(len(y_true))
         
@@ -153,7 +167,7 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
     return np.array(sampled_x), np.array(sampled_y), scores
 
 
-def compute_multiple_curves(y_true, y_pred, names, 
+def compute_multiple_curves(y_true, y_pred, names, groups=None,
                          metric='performance', n_boot=1, scorers=None, random_seed=42):
     """Compute multiple curves for a given verification diagram
     
@@ -204,6 +218,7 @@ def compute_multiple_curves(y_true, y_pred, names,
         _x, _y, _scores = sklearn_curve_bootstrap(
                                     y_true, 
                                     predictions, 
+                                    groups=groups, 
                                     metric=metric,
                                     n_boot=n_boot, 
                                     scorers=scorers)
@@ -212,8 +227,6 @@ def compute_multiple_curves(y_true, y_pred, names,
         yp[name] = _y
         pred[name] = predictions
         scores[name] = _scores
-        
-    print(f'{scores=}')    
         
     return xp, yp, pred, scores
         
