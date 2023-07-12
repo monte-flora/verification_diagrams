@@ -35,7 +35,7 @@ def bootstrap_generator(n_bootstrap, seed=42):
     return random_num_set
 
 def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scorers=None, 
-                            random_seed=42, **kws):
+                            random_seed=42, scores_only=False, N=200, **kws):
     """Compute verification diagram curves within sklearn.metrics, but 
     with the ability to perform bootstrapping. For example, the sklearn ROC and 
     precisions-recall, and reliability/calibration curve are not consistently 
@@ -77,10 +77,10 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
     
     Returns
     -----------
-       x : shape of (n_boot, 200) or (n_boot, 10)
+       x : shape of (n_boot, 100) or (n_boot, 10)
            x-comp of the verification diagram curve
            
-       y : shape of (n_boot, 200) or (n_boot, 200)
+       y : shape of (n_boot, 100) or (n_boot, 10)
            y-comp of the verification diagram curve
        
        scores : dict of arrays of shape (n_boot,)
@@ -88,8 +88,7 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
     """
     if metric not in ['performance', 'roc', 'reliability']:
         raise ValueError(f"{metric} is not a valid option. Check for spelling errors.")
-        
-    N = 200
+       
     if metric == 'performance':
         #func = precision_recall_curve
         func = performance_curve
@@ -134,33 +133,24 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
         else:
             idx = range(len(y_true))
         
-        curves.append(func(y_true[idx], y_pred[idx], **kws))
+        if not scores_only:
+            curves.append(func(y_true[idx], y_pred[idx], **kws))
         
         for k in scorers.keys():
             if scorers[k] in SKEW_BASED_METRICS:
                 scores[k].append(scorers[k](y_true[idx], y_pred[idx], known_skew=known_skew))
             else:
                 scores[k].append(scorers[k](y_true[idx], y_pred[idx]))
-        
-    sampled_thresholds = np.linspace(0.001, 0.99, N)
+   
+    if scores_only:
+        return scores 
+
     sampled_x = []
     sampled_y = []
     # assume curves is a list of (precision, recall, threshold)
     # tuples where each of those three is a numpy array
     for pair in curves:
-        if metric in ['None']: #['performance', 'roc']:
-            x, y, threshold = pair
-            x_fp = x[:-1] if metric == 'performance' else x
-            y_fp = y[:-1] if metric == 'performance' else y
-            
-            fx = interpolate.interp1d(threshold, x_fp, fill_value='extrapolate')
-            fy = interpolate.interp1d(threshold, y_fp, fill_value='extrapolate')
-            
-            x = fx(sampled_thresholds)
-            y = fy(sampled_thresholds)
-        else:
-            x, y = pair
-        
+        x, y = pair
         sampled_x.append(x)
         sampled_y.append(y)
     
@@ -168,7 +158,8 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
 
 
 def compute_multiple_curves(y_true, y_pred, names, groups=None,
-                         metric='performance', n_boot=1, scorers=None, random_seed=42):
+                         metric='performance', n_boot=1, scorers=None, scores_only=False,
+                            random_seed=42):
     """Compute multiple curves for a given verification diagram
     
     y_true : array (n_samples,)
@@ -215,20 +206,29 @@ def compute_multiple_curves(y_true, y_pred, names, groups=None,
         names = [names]
     
     for name, predictions in zip(names, y_pred):
-        _x, _y, _scores = sklearn_curve_bootstrap(
+        results  = sklearn_curve_bootstrap(
                                     y_true, 
                                     predictions, 
                                     groups=groups, 
                                     metric=metric,
                                     n_boot=n_boot, 
-                                    scorers=scorers)
-    
-        xp[name] = _x
-        yp[name] = _y
-        pred[name] = predictions
-        scores[name] = _scores
+                                    scorers=scorers,
+                                    scores_only=scores_only,
+        )
         
-    return xp, yp, pred, scores
+        if scores_only:
+            scores[name] = results
+        else:
+            xp[name] = results[0]
+            yp[name] = results[1]
+            pred[name] = predictions
+            scores[name] = results[2]
+            
+    
+    if scores_only:
+        return scores 
+    else:
+        return xp, yp, pred, scores
         
 
 def _confidence_interval_to_polygon(

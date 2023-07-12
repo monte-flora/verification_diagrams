@@ -19,14 +19,15 @@ from ._curve_utils import _confidence_interval_to_polygon
 from ._metrics import calc_csi, reliability_uncertainty
 
 class VerificationDiagram:
-    mpl.rcParams["axes.titlepad"] = 15
-    mpl.rcParams["xtick.labelsize"] = 10
-    mpl.rcParams["ytick.labelsize"] = 10
-    
     def __init__(self, y_true=None, y_pred=None):
     
         self._y_true = y_true
         self._y_pred = y_pred 
+        
+        mpl.rcParams["axes.titlepad"] = 15
+        mpl.rcParams["xtick.labelsize"] = 15
+        mpl.rcParams["ytick.labelsize"] = 15
+        
     
     def _add_major_and_minor_ticks(self, ax):
         """Add minor and major tick marks"""
@@ -39,21 +40,6 @@ class VerificationDiagram:
         """Sets the axis limits"""
         ax.set_ylim([0,1])
         ax.set_xlim([0,1])
-    
-    def _make_reliability(self, ax, **diagram_kwargs):
-        """
-        Make the Receiver Operating Characterisitc (ROC) Curve.
-        """
-        ax.set_xlim([0,1])
-        ax.set_ylim([0,1])
-        ax.plot([0,1], [0,1], ls='dashed', color='k', alpha=0.7)
-        ax.set_xlabel('Mean Forecast Probability')
-        ax.set_ylabel('Conditional Event Frequency')
-        
-        if self._y_pred is not None:
-            self._right_ax = self.make_twin_ax(ax)
-     
-        return ax 
     
     def make_twin_ax(self, ax):
         """
@@ -102,7 +88,7 @@ class VerificationDiagram:
              multiple='dodge', shrink=.7, bins=bins, ax=ax, alpha=0.1, legend=False)
 
         ax.set_yscale('log')
-        ax.set_ylabel(r'Samples')    
+        ax.set_ylabel(r'Samples', fontsize=10)    
         ax = self.set_log_yticks(ax)
 
         #ax.set_zorder(15)  # default zorder is 0 for ax1 and ax2
@@ -166,10 +152,33 @@ class VerificationDiagram:
         return small_ax 
     '''    
     
+    def _make_reliability(self, ax, **diagram_kwargs):
+        """
+        Make the Receiver Operating Characterisitc (ROC) Curve.
+        """
+        fontsize = diagram_kwargs.get('fontsize', 12)
+        add_axis_labels = diagram_kwargs.get('add_axis_labels', True)
+        
+        ax.set_xlim([0,1])
+        ax.set_ylim([0,1])
+        ax.plot([0,1], [0,1], ls='dashed', color='k', alpha=0.7)
+        if add_axis_labels:
+            ax.set_xlabel('Mean Forecast Probability', fontsize=fontsize)
+            ax.set_ylabel('Conditional Event Frequency', fontsize=fontsize)
+        
+        if self._y_pred is not None:
+            self._right_ax = self.make_twin_ax(ax)
+     
+        return ax 
+    
+    
     def _make_roc(self, ax, **diagram_kwargs):
         """
         Make the Receiver Operating Characterisitc (ROC) Curve.
         """
+        fontsize = diagram_kwargs.get('fontsize', 12)
+        add_axis_labels = diagram_kwargs.get('add_axis_labels', True)
+        
         pss_contours = diagram_kwargs.get('pss_contours', True)
         cmap = diagram_kwargs.get('cmap', 'Blues')
         alpha = diagram_kwargs.get('alpha', 0.6)
@@ -188,21 +197,30 @@ class VerificationDiagram:
         # Plot random classifier/no-skill line 
         ax.plot(x,x,linestyle="dashed", color="gray", linewidth=0.8)
         
+        if add_axis_labels:
+            ax.set_xlabel('Probability of False Detection (POFD)', fontsize=fontsize)
+            ax.set_ylabel('Probability of Detection (POD)', fontsize=fontsize)
+        
         return ax, contours 
 
     def _make_performance(self, ax, **diagram_kwargs):
         """
         Make a performance diagram (Roebber 2009). 
         """
+        fontsize = diagram_kwargs.get('fontsize', 12)
+        add_axis_labels = diagram_kwargs.get('add_axis_labels', True)
+        
         ax.set_xlim([0,1])
         ax.set_ylim([0,1])
         xx = np.linspace(0.001,1,100)
         yy = xx
         xx,yy = np.meshgrid(xx,xx)
         csi = 1 / (1/xx + 1/yy -1)
+        
         cf = ax.contourf(xx,yy,csi, cmap='Blues', alpha=0.3, levels=np.arange(0,1.1,0.1))
-        ax.set_xlabel('Success Ratio (SR; 1-FAR)')
-        ax.set_ylabel('Probability of Detection (POD)')
+        if add_axis_labels:
+            ax.set_xlabel('Success Ratio (SR; 1-FAR)', fontsize=fontsize)
+            ax.set_ylabel('Probability of Detection (POD)', fontsize=fontsize)
         biasLines = ax.contour(
                     xx,
                     yy,
@@ -217,8 +235,11 @@ class VerificationDiagram:
         divider = make_axes_locatable(ax)
         cax = divider.append_axes('right', size='5%', pad=0.05)
         fig = ax.get_figure()
-        fig.colorbar(cf, cax=cax, label='Critical Success Index (CSI)')
+        cb = fig.colorbar(cf, cax=cax)
 
+        # Set the fontsize of the colorbar label
+        cb.set_label('Critical Success Index (CSI)', fontsize=fontsize-2)
+        
         return ax, cf 
         
     def plot(self, diagram, x, y,
@@ -227,7 +248,8 @@ class VerificationDiagram:
              add_max_marker=False,
              line_colors=None,
              diagram_kwargs={}, 
-             plot_kwargs={}, ax=None, table_bbox=None, pred=None): 
+             plot_kwargs={}, ax=None, table_bbox=None, 
+             table_fontsize=8, table_alpha=0.5, pred=None): 
         """
         Plot a performance, attribute, or ROC Diagram. 
         
@@ -372,18 +394,21 @@ class VerificationDiagram:
         
         # Add the table of metrics to the verification diagrams
         # The code will attempt to determine the best location. 
+        column_translator = {"NAUDPC" : 'NAPD', 'AUPDC' : 'APD'}
+        
         if scores is not None:
             table_data, rows, columns = to_table_data(scores)
             rows = [f' {r} ' for r in rows]
            
-            
+            columns = [column_translator.get(c,c) for c in columns]
+        
             n_rows, n_cols= np.shape(table_data)
             n_rows = max(1, n_rows)
             n_cols = max(1, n_cols)
             
             d_cols = n_cols-1
             shift = d_cols*0.16
-            
+
             if diagram == 'performance':
                 if csi is None: 
                     max_csi = np.max(calc_csi(_x, _y))
@@ -393,7 +418,12 @@ class VerificationDiagram:
                 if max_csi >= 0.4:
                     # For performance diagram curves in the upper right hand 
                     # corner place the table in the lower left.
-                    bbox=[0.275-shift, 0.025, 0.16*n_cols, 0.075*n_rows]        
+                    xpos = 0.40-shift
+                    if xpos < 0.1 or d_cols==0:
+                        xpos=0.275
+         
+                    
+                    bbox=[xpos, 0.025, 0.16*n_cols, 0.075*n_rows]        
                 else:
                     # If the curve is in the lower left hand side, 
                     # then place the table in the upper right. 
@@ -414,25 +444,24 @@ class VerificationDiagram:
                     row_colors = {name : c for name,c in zip(rows, line_colors)},
                     bbox=table_bbox,
                     colWidth=0.16,
-                    fontsize=8)
+                    fontsize=table_fontsize, alpha=table_alpha)
             
         return ax
             
 def add_table(ax, table_data, row_labels, column_labels, row_colors, col_colors, bbox,
-        fontsize=3., extra=0.7, colWidth=0.16, ):
+        fontsize=3., extra=0.7, colWidth=0.16, alpha=0.2 ):
     """
-    Adds a table
+    Adds a table with the scores for each model.
     """
-    #[0.12]*3
     col_colors = plt.cm.BuPu(np.full(len(column_labels), 0.1))
     the_table = ax.table(cellText=table_data,
                rowLabels=row_labels,
                colLabels=column_labels,
                colWidths = [colWidth]*len(column_labels),
-               rowLoc='center',
+               rowLoc='right',
                cellLoc = 'center' , 
                colColours=col_colors,
-               alpha=0.6,
+               alpha=alpha,
                zorder=5,
                bbox=bbox
                 )
@@ -441,6 +470,9 @@ def add_table(ax, table_data, row_labels, column_labels, row_colors, col_colors,
     table_cells = table_props['children']
     i=0; idx = 0
     for cell in table_cells: 
+        # Set transparency
+        cell.set_alpha(alpha)
+        
         cell_txt = cell.get_text().get_text()
 
         if i % len(column_labels) == 0 and i > 0:
@@ -455,20 +487,23 @@ def add_table(ax, table_data, row_labels, column_labels, row_colors, col_colors,
             
         if cell_txt in column_labels:
             cell.get_text().set_color('k') 
-            if len(cell.get_text().__dict__['_text']) > 3:
-                cell.get_text().set_fontsize(fontsize-3.25)
+            if len(cell.get_text().__dict__['_text']) > 4:
+                cell.get_text().set_fontsize(fontsize-2)
         else:
             pass
-            #cell.get_text().set_color('grey')
         
         if cell_txt in row_labels:
+            # Change the row labels to have the right color and 
+            # make them right-aligned
             cell.get_text().set_color(row_colors[cell_txt]) 
             cell.get_text().set_fontsize(fontsize)
+            cell.get_text().set_ha('right')
         
         i+=1
         
     for key, cell in the_table.get_celld().items():
-        cell.set_linewidth(0.25)
+        cell.set_linewidth(0.125)
+        
 
 def is_number(s):
     try:

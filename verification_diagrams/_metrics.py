@@ -270,7 +270,7 @@ class ContingencyTable:
         return 1. /((1./sr) + (1./pod) - 1.)
 
 
-def performance_curve(y, predictions, bins=np.arange(0, 1, 0.005), deterministic=False ):
+def performance_curve(y, predictions, bins=np.arange(0, 1.05, 0.05), deterministic=False ):
     ''' 
     Generates the POD and SR for a series of probability thresholds 
     to produce performance diagram (Roebber 2009) curves
@@ -289,7 +289,7 @@ def performance_curve(y, predictions, bins=np.arange(0, 1, 0.005), deterministic
         
     return sr, pod
 
-def roc_curve(y, predictions, bins=np.arange(0, 1, 0.005), deterministic=False ):
+def roc_curve(y, predictions, bins=np.arange(0, 1.05, 0.05), deterministic=False ):
     ''' 
     Generates the POD and POFD for a series of probability thresholds 
     to produce the ROC curve. 
