@@ -159,7 +159,7 @@ def sklearn_curve_bootstrap(y_true, y_pred, metric, n_boot=30, groups=None, scor
 
 def compute_multiple_curves(y_true, y_pred, names, groups=None,
                          metric='performance', n_boot=1, scorers=None, scores_only=False,
-                            random_seed=42):
+                            random_seed=42, **kws):
     """Compute multiple curves for a given verification diagram
     
     y_true : array (n_samples,)
@@ -214,6 +214,7 @@ def compute_multiple_curves(y_true, y_pred, names, groups=None,
                                     n_boot=n_boot, 
                                     scorers=scorers,
                                     scores_only=scores_only,
+                                    **kws
         )
         
         if scores_only:

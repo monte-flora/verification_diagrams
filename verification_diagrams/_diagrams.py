@@ -248,7 +248,7 @@ class VerificationDiagram:
              add_max_marker=False,
              line_colors=None,
              diagram_kwargs={}, 
-             plot_kwargs={}, ax=None, table_bbox=None, 
+             plot_kwargs={}, ax=None, add_table=True, table_bbox=None, 
              table_fontsize=8, table_alpha=0.5, pred=None): 
         """
         Plot a performance, attribute, or ROC Diagram. 
@@ -437,7 +437,8 @@ class VerificationDiagram:
             if table_bbox is None:
                 table_bbox = bbox
                     
-            add_table(ax, table_data,
+            if add_table:        
+                plot_table(ax, table_data,
                     row_labels=rows,
                     column_labels=columns,
                     col_colors= None,
@@ -448,7 +449,7 @@ class VerificationDiagram:
             
         return ax
             
-def add_table(ax, table_data, row_labels, column_labels, row_colors, col_colors, bbox,
+def plot_table(ax, table_data, row_labels, column_labels, row_colors, col_colors, bbox,
         fontsize=3., extra=0.7, colWidth=0.16, alpha=0.2 ):
     """
     Adds a table with the scores for each model.

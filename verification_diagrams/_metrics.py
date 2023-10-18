@@ -1,7 +1,7 @@
 from sklearn.metrics import roc_auc_score, roc_curve, average_precision_score, precision_recall_curve, make_scorer
 import numpy as np
 import pandas as pd
-from math import log
+from math import log, sqrt, cos, asin, log10, pi
 import xarray as xr
 from sklearn.utils import resample
 from numpy.random import uniform
@@ -240,37 +240,405 @@ class ContingencyTable:
     param: predictions, predictions binary labels. shape = [n_samples]
     ContingencyTable calculates the components of the contigency table, but ignoring correct negatives. 
     Can use determinstic and probabilistic input.     
+    
+    The 71+ metrics included here come from Brusco et al. (2021)
+    "A comparison of 71 binary similarity coefficients: The effect of base rates"
+    
     '''
-    def __init__( self, y, predictions ):
+    def __init__(self, y=None, predictions=None):
+        
+        if y is not None and predictions is not None:
+            self._check_inputs(y, predictions)
+            self._get_table_elements()
+    
+    
+    def _get_table_elements(self):
+        self.hits = np.sum((self.y == 1) & (self.predictions == 1))
+        self.false_alarms = np.sum((self.y == 0) & (self.predictions == 1))
+        self.misses = np.sum((self.y == 1) & (self.predictions == 0))
+        self.corr_negs = np.sum((self.y == 0) & (self.predictions == 0))
+
+        self.a = self.hits
+        self.b = self.misses
+        self.c = self.false_alarms
+        self.d = self.corr_negs
+        
+        # Creating terms used in the equations below. 
+        self.n = self.a+self.b+self.c+self.d
+        
+        self.tau_1 = max(self.a,self.b)+max(self.c,self.d)+max(self.a,self.c)+max(self.b,self.d)
+        self.tau_2 = max(self.a+self.c, self.b+self.d) + max(self.a+self.b, self.c+self.d) 
+        
+        self._N = (self.n*(self.n-1))/2
+        
+        self._B = self.a*self.b + self.c*self.d
+        self._C = self.a*self.c+self.b*self.d
+        self._D = self.a*self.d+self.b*self.c
+        
+        self._A = self._N-self._B-self._C-self._D
+
+    def _check_inputs(self, y, predictions):
+        if isinstance(y, list):
+            y = np.array(y)
+        if isinstance(predictions, list):
+            predictions = np.array(predictions)
+        
+        if not self.is_binary(y):
+            raise ValueError('y must be binary with values of 0 and 1')
+            
+        if not self.is_binary(predictions):
+            raise ValueError('predictions must be binary with values of 0 and 1')
+        
+        if len(np.unique(y)) == 1:
+            raise ValueError('y only has one class!')
+            
         self.y = y
         self.predictions = predictions
-        self.hits = np.sum((y == 1) & (predictions == 1))
-        self.false_alarms = np.sum((y == 0) & (predictions == 1))
-        self.misses = np.sum((y == 1) & (predictions == 0))
-        self.corr_negs = np.sum((y == 0) & (predictions == 0))
         
-    def calc_pod(self):
+    def check_denominator(self, denom):
+        if denom < 0.0001:
+            denom = 0.00001
+        return denom
+    
+    def is_binary(self, arr):
+        unique_vals = np.unique(arr)
+        return np.array_equal(unique_vals, [0, 1]) or \
+            np.array_equal(unique_vals, [1, 0]) or \
+            np.array_equal(unique_vals, [0]) or \
+            np.array_equal(unique_vals, [1])
+
+    # Start of the metrics
+    def pod(self, *args):
         return self.hits / (self.hits + self.misses)
-
-    def calc_pofd(self):
+    
+    def pofd(self,*args):
         return self.false_alarms / (self.false_alarms + self.corr_negs)
-
-    def calc_sr(self):
+    
+    def sr(self,*args):
         return self.hits / (self.hits + self.false_alarms) if self.hits + self.false_alarms != 0 else 1.
-
-    @staticmethod
-    def calc_bias(pod, sr):
-        sr[np.where(sr==0)] = 1e-5
-        return pod / sr
-
-    @staticmethod
-    def calc_csi(pod, sr):
-        sr[np.where(sr==0)] = 1e-5
-        pod[np.where(pod==0)] = 1e-5
-        return 1. /((1./sr) + (1./pod) - 1.)
-
-
-def performance_curve(y, predictions, bins=np.arange(0, 1.05, 0.05), deterministic=False ):
+    
+    def dice_I(self,*args):
+        return self.a / (self.a + self.b)
+    
+    def dice_II(self,*args):
+        return self.a/(self.a+self.c)
+    
+    def jaccard(self,*args):
+        return self.a/(self.a+self.b+self.c)
+    
+    def swjaccard(self,*args):
+        return 3*self.a/(3*self.a+self.b+self.c)
+    
+    def gleason(self,*args):
+        return 2*self.a/(2*self.a+self.b+self.c)
+    
+    def kulczynski_I(self,*args):
+        return self.a/(self.b+self.c)
+    
+    def kulczynski_II(self,*args):
+        return 0.5*(self.a/(self.a+self.b) + self.a/(self.a+self.c))
+    
+    def dko(self,*args):
+        # Driver and Kroeber and Ochiai
+        return self.a / (sqrt((self.a+self.b)*(self.a+self.c)))
+    
+    def braun_blanquet(self,*args):
+        return self.a / max(self.a+self.b, self.a+self.c)
+    
+    def simpson(self,*args):
+        return self.a / min(self.a+self.b, self.a+self.c)
+    
+    def sorgenfrei(self,*args):
+        return self.a**2 / ((self.a+self.b)*(self.a+self.c))
+    
+    def mountford(self,*args):
+        return 2*self.a / (self.a*self.b+ self.a*self.c + 2*self.b+self.c)
+    
+    def fager_and_mcgowan(self,*args):
+        return self.dko() - max(self.a+self.b, self.a+self.c)/2
+    
+    def sokal_and_sneath_I(self,*args):
+        return self.a / (self.a+2*self.b+2*self.c)
+    
+    def mcconaughey(self,*args):
+        return (self.a**2-self.b*self.c)/(self.a+self.b*(self.a+self.c))
+    
+    def johnson(self,*args):
+        return self.a/(self.a+self.b + self.a/(self.a+self.c))
+    
+    def van_der_maarel(self,*args):
+        return (2*self.a-self.b+self.c)/(2*self.a+self.b+self.c)
+    
+    def ct_IV(self,*args):
+        # Consonni and Todeschini
+        return log(1+self.a)/log(1+self.a+self.b+self.c)
+    
+    def russel_and_rao(self,*args):
+        return self.a / self.n 
+    
+    def ct_III(self,*args):
+        # Consonni and Todeschini
+        return log(1+self.a) / log(1+self.n)
+    
+    def sokal_and_michener(self,*args):
+        return (self.a+self.d)/ self.n
+    
+    def rogers_and_tanimoto(self,*args):
+        return (self.a+self.d) / (self.n+self.b+self.c)
+    
+    def sokal_and_sneath_II(self,*args):
+        return (2*(self.a+self.d)) / (self.n+self.a+self.d)
+    
+    def sokal_and_sneath_III(self,*args):
+        # 24 
+        return (self.a+self.d) / (self.b+self.c)
+    
+    def faith(self,*args):
+        return (self.a+(self.d/2)) / self.n
+    
+    def gower_and_legendre(self,*args):
+        return (self.a+self.d) / (self.a+self.d+((self.b+self.c)/2))
+    
+    def gower(self,*args):
+        return (self.a+self.d) / sqrt((self.a+self.b*(self.a+self.c)*(self.b+self.d)*(self.c+self.d)))
+    
+    def austin_and_colwell(self,*args):
+        return (2/pi)*asin(sqrt((self.a+self.d)/self.n))
+    
+    def ct_I(self,*args):
+        return log(1+self.a+self.d)/log(1+self.n)
+    
+    def hamann(self,*args):
+        return (self.a+self.d-self.b-self.c) / (self.n)
+    
+    def peirce_I(self,*args):
+        return (self.a*self.d - self.b*self.c)/ (self.a+self.b)*(self.c+self.d)
+    
+    def peirce_II(self,*args):
+        return (self.a*self.d - self.b*self.c)/ (self.a+self.c)*(self.b+self.d)
+    
+    def yule_Q(self,*args):
+        #33
+        return (self.a*self.d-self.b*self.c)/ (self.a*self.d+self.b*self.c)
+    
+    def yule_W(self,*args):
+        num = (sqrt(self.a*self.d)-sqrt(self.b*self.c))
+        den = (sqrt(self.a*self.d)+sqrt(self.b*self.c))
+    
+        den = self.check_denominator(den)
+        
+        return num / den
+    
+    def pearson_I(self,*args):
+        num = self.n*(self.a*self.d-self.b*self.c)**2 
+        den = (self.a +self.d*self.a+self.c*self.b+self.d*self.c+self.d)
+        
+        den = self.check_denominator(den)
+        
+        return num / den
+    
+    def pearson_II(self,*args):
+        chi_squared = self.pearson_I()
+        return sqrt(chi_squared/ (self.n + chi_squared))
+    
+    def phi(self,*args):
+        return (self.a*self.d-self.b*self.c)/ (sqrt(self.a+self.d*self.a+self.c*self.b+self.d*self.c+self.d))
+    
+    def michael(self,*args):
+        return (4*(self.a *self.d-self.b*self.c)) / ((self.a +self.d**2 + (self.b +self.c**2)))
+    
+    def cole_I(self,*args):
+        num = (self.a *self.d-self.b*self.c) 
+        den = ((self.a +self.c) * (self.c +self.d))
+        den = self.check_denominator(den)
+        
+        return num / den
+    
+    def cole_II(self,*args):
+        return (self.a *self.d - self.b*self.c) / ((self.a + self.b) * (self.b +self.d))
+    
+    def cohen(self,*args):
+        num =  (2*(self.a *self.d-self.b*self.c))
+        den =  sqrt((self.a +self.b)*(self.b +self.d) + (self.a +self.c*(self.c +self.d)))
+        
+        den = self.check_denominator(den)
+        
+        return num/den     
+    
+    def maxwell_and_pilliner(self,*args):
+        num = 2*(self.a*self.d-self.b*self.c) 
+        den = ((self.a + self.b)*(self.c +self.d) + (self.a +self.c)*(self.b +self.d)) 
+        
+        den = self.check_denominator(den)
+        
+        return num/den
+    
+    def dennis(self,*args):
+        num =(self.a*self.d-self.b*self.c) 
+        den = sqrt(self.n*(self.a +self.b)*(self.a +self.c))
+        den = self.check_denominator(den)
+        
+        return num/den
+    
+    def dispersion(self,*args):
+        return (self.a *self.d-self.b*self.c) / self.n**2
+    
+    def ct_IV(self,*args):
+        return (log(1 +self.a*self.d) - log(1 +self.b*self.c)) / log(1 + 0.25*self.n**2)
+    
+    def stiles(self,*args):
+        num = self.n*(abs(self.a *self.d-self.b*self.c)-0.5*self.n)**2
+        denom = (self.a+self.b)*(self.a+self.c)*(self.b+self.d)*(self.c+self.d)
+        
+        term = num/denom
+        
+        term = self.check_denominator(term)
+        
+        return log10(term)
+    
+    def scott(self,*args):
+        num = 4 *self.a*self.d- (self.b +self.c)**2
+        denom = (2 *self.a+self.b+self.c)*(2 *self.d+self.b+self.c)
+        
+        denom = self.check_denominator(denom)
+        
+        return num/denom
+    
+    def tetrachoric(self,*args):
+        term = (self.b *self.c)
+        term = self.check_denominator(term)
+        
+        return cos(180./(1 + sqrt((self.a *self.d) / (term))))
+    
+    def odds_ratio(self,*args):
+        num = (self.a *self.d)
+        den = (self.b *self.c)
+        
+        den = self.check_denominator(den)
+        
+        return num/den
+    
+    def rand_coef(self,*args):
+        return (self._A + self._B) / self._N
+    
+    def ari(self,*args):
+        num1 =  self._N*(self._A + self._D) 
+        num2 = (self._A + self._B)*(self._A + self._C)*(self._C + self._D)*(self._B + self._D)
+        num = num1- num2
+        denom = self._N**2 - (num2)
+        
+        denom = self.check_denominator(denom)
+        
+        return num / denom
+    
+    #def loevingers_h(self,*args):
+    #    pass
+    
+    def sokal_and_sneath_V(self,*args):
+        return 0.25*(self.dice_I() + self.dice_II() + self.d/(self.b+self.d) + self.d/(self.c+self.d))
+    
+    def sokal_and_sneath_V(self,*args):
+        return (self.a *self.d) / sqrt((self.a +self.b*(self.a +self.c) + (self.b+self.d)*(self.c+self.d)))
+    
+    def rogot_and_goldberg(self,*args):
+        term1 =self.a/ (2 *self.a+self.b+self.c)
+        term2 =self.d/ (2 *self.d+self.b+self.c)
+        return term1 + term2
+    
+    def baroni_and_buser_I(self,*args):
+        return (sqrt(self.a *self.d) +self.a) / (sqrt(self.a *self.d +self.a+self.b+self.c))
+    
+    def peirce_III(self,*args):
+        return (self.a *self.b+self.b*self.c)/ (self.a *self.b+ 2 *self.b*self.c+self.c*self.d)
+    
+    def hawkins_and_dotson(self,*args):
+        term1 =self.a/ (self.a +self.b+self.c)
+        term2 =self.d/ (self.b +self.c+self.d)
+        return 0.5*(term1 + term2)
+    
+    def tarantula(self,*args):
+        num =self.a* (self.c +self.d)
+        denom =self.c* (self.a +self.b)
+        denom = self.check_denominator(denom)
+        
+        return num/denom
+    
+    def harris_and_lahey(self,*args):
+        term1 =self.a* (2 *self.d+self.b+self.c) / (2 * (self.a +self.b+self.c))
+        term2 =self.d* (2 *self.a+self.b+self.c) / (2 * (self.b +self.c+self.d))
+        return term1+term2
+    
+    def forbes_I(self,*args):
+        return self.n * self.a / ((self.a +self.b) * (self.a +self.c))
+    
+    def baroni_and_buser_II(self,*args):
+        term = self.a *self.d +self.a-self.b-self.c
+        if term <= 0:
+            # Undefined so return 0 score. 
+            return 0 
+        
+        return (sqrt(self.a *self.d +self.a-self.b-self.c)) / (sqrt(self.a *self.d +self.a+self.b+self.c))
+    
+    def fossum(self,*args):
+        num = self.n * (self.a - 0.5)**2
+        denom = sqrt((self.a +self.b * (self.a +self.c)))
+        denom = self.check_denominator(denom)
+        
+        return num/denom
+    
+    def forbes_II(self,*args):
+        num = (self.n *self.a- (self.a +self.b) * (self.a +self.c))
+        denom = self.n * ( min(self.a +self.b, self.a+self.c) - (self.a +self.b)* (self.a +self.c))
+        denom = self.check_denominator(denom)
+        
+        return num/denom
+    
+    def eyraud(self,*args):
+        num = self.n**2 * ((self.n *self.a) - (self.a +self.b) * (self.a +self.c))
+        denom = (self.a +self.b) * (self.a +self.c) * (self.b +self.d) * (self.c +self.d)
+        
+        denom = self.check_denominator(denom)
+        
+        return num/denom
+    
+    def tarwid(self,*args):
+        num   = self.n *self.a- ((self.a +self.b) * (self.a +self.c))
+        denom = self.n *self.a+ ((self.a +self.b) * (self.a +self.c)) 
+        
+        denom = self.check_denominator(denom)
+        
+        return num/denom
+    
+    def goodman_and_kruskal_I(self,*args):
+        return self.tau_1 - self.tau_2 / (2 * self.n - self.tau_2)
+    
+    def anderberg(self,*args):
+        return (self.tau_1 - self.tau_2) / (2 *self.n)
+    
+    def goodman_and_kruskal_II(self,*args):
+        num  = 2 * min(self.a ,self.d) -self.b- self.c
+        den  = 2 * min(self.a ,self.d) +self.b+ self.c
+        
+        den = self.check_denominator(den)
+        
+        return num/den
+    
+    def gilbert_and_wells(self,*args):
+        a = self.a 
+        if a < 0.00001:
+            a = 0.00001
+            
+        term =   (self.a+self.c)/ self.n
+        if term < 0.000001:
+            term = 0.000001 
+            
+        return log(a) - log(self.n) - log((self.a + self.b) / self.n) - log(term)
+    
+    def ct_II(self,*args):
+        return (log(1+self.n) - log(1+self.b+self.c))/log(1+self.n)
+                    
+                    
+def performance_curve(y, predictions, bins=np.arange(0, 1.025, 0.025), deterministic=False ):
     ''' 
     Generates the POD and SR for a series of probability thresholds 
     to produce performance diagram (Roebber 2009) curves
@@ -284,26 +652,26 @@ def performance_curve(y, predictions, bins=np.arange(0, 1.05, 0.05), determinist
     else:
         tables = [ContingencyTable(y, np.where(predictions >= p, 1, 0)) for p in bins]
 
-        pod = np.array([t.calc_pod() for t in tables])
-        sr = np.array([t.calc_sr() for t in tables])
+        pod = np.array([t.pod() for t in tables])
+        sr = np.array([t.sr() for t in tables])
         
     return sr, pod
 
-def roc_curve(y, predictions, bins=np.arange(0, 1.05, 0.05), deterministic=False ):
+def roc_curve(y, predictions, bins=np.arange(0, 1.025, 0.025), deterministic=False ):
     ''' 
     Generates the POD and POFD for a series of probability thresholds 
     to produce the ROC curve. 
-    '''
+    '''    
     predictions = np.round(predictions,5)
     if deterministic:
         table = ContingencyTable(y, predictions)
-        pod = table.calc_pod( )
-        sr = table.calc_sr( )
+        pod = table.pod( )
+        sr = table.sr( )
     else:
         tables = [ContingencyTable(y, np.where(predictions >= p, 1, 0)) for p in bins]
 
-        pod = np.array([t.calc_pod() for t in tables])
-        pofd = np.array([t.calc_pofd() for t in tables])
+        pod = np.array([t.pod() for t in tables])
+        pofd = np.array([t.pofd() for t in tables])
 
     return pofd, pod 
 
